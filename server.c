@@ -8,6 +8,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <errno.h>
+#include <time.h>
 
 #define PORT 8080
 #define MAX_CLIENTS 10
@@ -18,6 +19,13 @@ typedef struct {
 } client_t;
 
 client_t clients[MAX_CLIENTS];
+
+// Function to get the current timestamp
+void get_timestamp(char *buffer, size_t size) {
+    time_t now = time(NULL);
+    struct tm *t = localtime(&now);
+    strftime(buffer, size, "[%Y-%m-%d %H:%M:%S]", t);
+}
 
 void broadcast_message(char *message, int sender_socket) {
     for (int i = 0; i < MAX_CLIENTS; i++) {
@@ -141,9 +149,11 @@ int main() {
                         snprintf(welcome_msg, sizeof(welcome_msg), "%s has joined the chat\n", clients[i].username);
                         broadcast_message(welcome_msg, sd);
                     } else {
-                        // Broadcast the message to all clients
+                        // Broadcast the message to all clients with timestamp and username
+                        char timestamp[32];
+                        get_timestamp(timestamp, sizeof(timestamp));
                         char message[1024];
-                        snprintf(message, sizeof(message), "%s: %s", clients[i].username, buffer);
+                        snprintf(message, sizeof(message), "%s %s: %s", timestamp, clients[i].username, buffer);
                         broadcast_message(message, sd);
                     }
                 }
