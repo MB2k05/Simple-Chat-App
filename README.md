@@ -16,7 +16,7 @@ A simple command line based chatting application implemented in C that utilises 
 
 * POSIX compliant system
 
-## Getting started
+ # Getting started
 
 ### Clone the repository
 

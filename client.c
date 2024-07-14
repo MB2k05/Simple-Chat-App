@@ -44,11 +44,19 @@ int main() {
         return -1;
     }
 
+    // Get the username
+    char username[32];
+    printf("Enter your username: ");
+    fgets(username, 32, stdin);
+    username[strcspn(username, "\n")] = 0; // Remove the newline character
+
+    // Send the username to the server
+    send(sock, username, strlen(username), 0);
+
     // Create a thread to receive messages from the server
     pthread_create(&recv_thread, NULL, receive_messages, (void *)&sock);
 
     while (1) {
-        printf("Enter message: ");
         fgets(message, 1024, stdin);
         send(sock, message, strlen(message), 0);
     }

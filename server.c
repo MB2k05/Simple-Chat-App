@@ -12,8 +12,23 @@
 #define PORT 8080
 #define MAX_CLIENTS 10
 
+typedef struct {
+    int socket;
+    char username[32];
+} client_t;
+
+client_t clients[MAX_CLIENTS];
+
+void broadcast_message(char *message, int sender_socket) {
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (clients[i].socket != 0 && clients[i].socket != sender_socket) {
+            send(clients[i].socket, message, strlen(message), 0);
+        }
+    }
+}
+
 int main() {
-    int server_fd, new_socket, clients[MAX_CLIENTS];
+    int server_fd, new_socket;
     struct sockaddr_in address;
     int opt = 1;
     int addrlen = sizeof(address);
@@ -22,7 +37,7 @@ int main() {
 
     // Initialize clients array
     for (int i = 0; i < MAX_CLIENTS; i++) {
-        clients[i] = 0;
+        clients[i].socket = 0;
     }
 
     // Creating socket file descriptor
@@ -65,7 +80,7 @@ int main() {
 
         // Add child sockets to set
         for (int i = 0; i < MAX_CLIENTS; i++) {
-            int sd = clients[i];
+            int sd = clients[i].socket;
             if (sd > 0)
                 FD_SET(sd, &readfds);
             if (sd > max_sd)
@@ -90,8 +105,8 @@ int main() {
 
             // Add new socket to array of clients
             for (int i = 0; i < MAX_CLIENTS; i++) {
-                if (clients[i] == 0) {
-                    clients[i] = new_socket;
+                if (clients[i].socket == 0) {
+                    clients[i].socket = new_socket;
                     printf("Adding to list of sockets as %d\n", i);
                     break;
                 }
@@ -100,7 +115,7 @@ int main() {
 
         // Else, it's some IO operation on some other socket
         for (int i = 0; i < MAX_CLIENTS; i++) {
-            int sd = clients[i];
+            int sd = clients[i].socket;
 
             if (FD_ISSET(sd, &readfds)) {
                 // Check if it was for closing, and also read the incoming message
@@ -112,16 +127,24 @@ int main() {
 
                     // Close the socket and mark as 0 in list for reuse
                     close(sd);
-                    clients[i] = 0;
+                    clients[i].socket = 0;
+                    memset(clients[i].username, 0, sizeof(clients[i].username));
                 } else {
                     // Set the string terminating NULL byte on the end of the data read
                     buffer[valread] = '\0';
 
-                    // Broadcast the message to all clients, including the sender
-                    for (int j = 0; j < MAX_CLIENTS; j++) {
-                        if (clients[j] != 0) {
-                            send(clients[j], buffer, strlen(buffer), 0);
-                        }
+                    // First message from the client is their username
+                    if (strlen(clients[i].username) == 0) {
+                        strncpy(clients[i].username, buffer, sizeof(clients[i].username) - 1);
+                        printf("User %s connected.\n", clients[i].username);
+                        char welcome_msg[1024];
+                        snprintf(welcome_msg, sizeof(welcome_msg), "%s has joined the chat\n", clients[i].username);
+                        broadcast_message(welcome_msg, sd);
+                    } else {
+                        // Broadcast the message to all clients
+                        char message[1024];
+                        snprintf(message, sizeof(message), "%s: %s", clients[i].username, buffer);
+                        broadcast_message(message, sd);
                     }
                 }
             }
