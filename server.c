@@ -35,6 +35,22 @@ void broadcast_message(char *message, int sender_socket) {
     }
 }
 
+void send_private_message(char *message, char *recipient_username, int sender_socket) {
+    int found_recipient = 0;
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (clients[i].socket != 0 && strcmp(clients[i].username, recipient_username) == 0) {
+            send(clients[i].socket, message, strlen(message), 0);
+            found_recipient = 1;
+            break;
+        }
+    }
+    if (!found_recipient) {
+        char error_msg[256];
+        snprintf(error_msg, sizeof(error_msg), "User '%s' is not found or is offline.\n", recipient_username);
+        send(sender_socket, error_msg, strlen(error_msg), 0);
+    }
+}
+
 int main() {
     int server_fd, new_socket;
     struct sockaddr_in address;
@@ -149,13 +165,34 @@ int main() {
                         snprintf(welcome_msg, sizeof(welcome_msg), "%s has joined the chat\n", clients[i].username);
                         send(sd, welcome_msg, strlen(welcome_msg), 0);
                     } else {
-                        // Broadcast the message to all clients with timestamp and username
-                        char timestamp[32];
-                        get_timestamp(timestamp, sizeof(timestamp));
-                        char message[1100]; // Increased buffer size to accommodate timestamp, username, and message
-                        snprintf(message, sizeof(message), "%s %s: %s\n", timestamp, clients[i].username, buffer);
-                        printf("%s", message); // Print message to server console
-                        broadcast_message(message, sd);
+                        // Check if the message is a private message
+                        if (buffer[0] == '/' && buffer[1] == 'p' && buffer[2] == 'm' && buffer[3] == ' ') {
+                            // Parse recipient username and message
+                            char *recipient_username = strtok(buffer + 4, " ");
+                            char *message = strtok(NULL, "");
+
+                            if (recipient_username && message) {
+                                // Construct the private message
+                                char timestamp[32];
+                                get_timestamp(timestamp, sizeof(timestamp));
+                                char pm_message[1100]; // Increased buffer size to accommodate timestamp, sender's username, and message
+                                snprintf(pm_message, sizeof(pm_message), "%s [Private] %s: %s\n", timestamp, clients[i].username, message);
+                                send_private_message(pm_message, recipient_username, sd);
+                            } else {
+                                // Invalid private message format
+                                char error_msg[256];
+                                snprintf(error_msg, sizeof(error_msg), "Invalid private message format. Use: /pm username message\n");
+                                send(sd, error_msg, strlen(error_msg), 0);
+                            }
+                        } else {
+                            // Broadcast the message to all clients with timestamp and username
+                            char timestamp[32];
+                            get_timestamp(timestamp, sizeof(timestamp));
+                            char message[1100]; // Increased buffer size to accommodate timestamp, username, and message
+                            snprintf(message, sizeof(message), "%s %s: %s\n", timestamp, clients[i].username, buffer);
+                            printf("%s", message); // Print message to server console
+                            broadcast_message(message, sd);
+                        }
                     }
                 }
             }
