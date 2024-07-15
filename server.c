@@ -20,11 +20,37 @@ typedef struct {
 
 client_t clients[MAX_CLIENTS];
 
+// List of forbidden usernames
+const char *forbidden_usernames[] = {
+    "Adolf Hitler",
+    "Pedophile",
+    "Nigger",
+    "Donald Trump",
+    "Joe Biden",
+    "Nigga",
+    "Faggot",
+    "Fag",
+    "Nig",
+    "Fagget",
+    "Fagot",
+    NULL
+};
+
 // Function to get the current timestamp
 void get_timestamp(char *buffer, size_t size) {
     time_t now = time(NULL);
     struct tm *t = localtime(&now);
     strftime(buffer, size, "[%Y-%m-%d %H:%M:%S]", t);
+}
+
+// Function to check if the username is forbidden
+int is_forbidden_username(const char *username) {
+    for (int i = 0; forbidden_usernames[i] != NULL; i++) {
+        if (strcasecmp(username, forbidden_usernames[i]) == 0) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 void broadcast_message(char *message, int sender_socket) {
@@ -143,11 +169,17 @@ int main() {
 
                     // First message from the client is their username
                     if (strlen(clients[i].username) == 0) {
-                        strncpy(clients[i].username, buffer, sizeof(clients[i].username) - 1);
-                        printf("User %s connected.\n", clients[i].username);
-                        char welcome_msg[1024];
-                        snprintf(welcome_msg, sizeof(welcome_msg), "%s has joined the chat\n", clients[i].username);
-                        broadcast_message(welcome_msg, sd);
+                        // Check if the username is forbidden
+                        if (is_forbidden_username(buffer)) {
+                            const char *msg = "Username is forbidden. Please choose another username.\n";
+                            send(sd, msg, strlen(msg), 0);
+                        } else {
+                            strncpy(clients[i].username, buffer, sizeof(clients[i].username) - 1);
+                            printf("User %s connected.\n", clients[i].username);
+                            char welcome_msg[1024];
+                            snprintf(welcome_msg, sizeof(welcome_msg), "%s has joined the chat\n", clients[i].username);
+                            broadcast_message(welcome_msg, sd);
+                        }
                     } else {
                         // Broadcast the message to all clients with timestamp and username
                         char timestamp[32];
