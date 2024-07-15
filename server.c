@@ -1,4 +1,3 @@
-// server.c
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,6 +11,7 @@
 
 #define PORT 8080
 #define MAX_CLIENTS 10
+#define USER_FILE "users.txt"
 
 typedef struct {
     int socket;
@@ -20,7 +20,6 @@ typedef struct {
 
 client_t clients[MAX_CLIENTS];
 
-// Function to get the current timestamp
 void get_timestamp(char *buffer, size_t size) {
     time_t now = time(NULL);
     struct tm *t = localtime(&now);
@@ -49,6 +48,52 @@ void send_private_message(char *message, char *recipient_username, int sender_so
         snprintf(error_msg, sizeof(error_msg), "User '%s' is not found or is offline.\n", recipient_username);
         send(sender_socket, error_msg, strlen(error_msg), 0);
     }
+}
+
+int register_user(const char *username, const char *password) {
+    FILE *fp = fopen(USER_FILE, "a+");
+    if (fp == NULL) {
+        perror("Error opening user file");
+        return -1;
+    }
+
+    // Check if username already exists
+    char line[128];
+    while (fgets(line, sizeof(line), fp)) {
+        char *token = strtok(line, " ");
+        if (token != NULL && strcmp(token, username) == 0) {
+            fclose(fp);
+            return -1; // User already exists
+        }
+    }
+
+    // Add new user
+    fprintf(fp, "%s %s\n", username, password);
+    fclose(fp);
+    return 0; // Registration successful
+}
+
+int authenticate_user(const char *username, const char *password) {
+    FILE *fp = fopen(USER_FILE, "r");
+    if (fp == NULL) {
+        perror("Error opening user file");
+        return -1;
+    }
+
+    char line[128];
+    while (fgets(line, sizeof(line), fp)) {
+        char stored_username[32];
+        char stored_password[32];
+        if (sscanf(line, "%s %s", stored_username, stored_password) == 2) {
+            if (strcmp(stored_username, username) == 0 && strcmp(stored_password, password) == 0) {
+                fclose(fp);
+                return 0; // Authentication successful
+            }
+        }
+    }
+
+    fclose(fp);
+    return -1; // Authentication failed
 }
 
 int main() {
@@ -157,41 +202,49 @@ int main() {
                     // Set the string terminating NULL byte on the end of the data read
                     buffer[valread] = '\0';
 
-                    // First message from the client is their username
-                    if (strlen(clients[i].username) == 0) {
-                        strncpy(clients[i].username, buffer, sizeof(clients[i].username) - 1);
-                        printf("User %s connected.\n", clients[i].username);
-                        char welcome_msg[1024];
-                        snprintf(welcome_msg, sizeof(welcome_msg), "%s has joined the chat\n", clients[i].username);
-                        send(sd, welcome_msg, strlen(welcome_msg), 0);
-                    } else {
-                        // Check if the message is a private message
-                        if (buffer[0] == '/' && buffer[1] == 'p' && buffer[2] == 'm' && buffer[3] == ' ') {
-                            // Parse recipient username and message
-                            char *recipient_username = strtok(buffer + 4, " ");
-                            char *message = strtok(NULL, "");
+                    // Check if the message is a registration request
+                    if (buffer[0] == '/' && buffer[1] == 'r' && buffer[2] == 'e' && buffer[3] == 'g' && buffer[4] == ' ') {
+                        // Parse username and password
+                        char *username = strtok(buffer + 5, " ");
+                        char *password = strtok(NULL, "");
 
-                            if (recipient_username && message) {
-                                // Construct the private message
-                                char timestamp[32];
-                                get_timestamp(timestamp, sizeof(timestamp));
-                                char pm_message[1100]; // Increased buffer size to accommodate timestamp, sender's username, and message
-                                snprintf(pm_message, sizeof(pm_message), "%s [Private] %s: %s\n", timestamp, clients[i].username, message);
-                                send_private_message(pm_message, recipient_username, sd);
-                            } else {
-                                // Invalid private message format
-                                char error_msg[256];
-                                snprintf(error_msg, sizeof(error_msg), "Invalid private message format. Use: /pm username message\n");
-                                send(sd, error_msg, strlen(error_msg), 0);
+                        if (username && password) {
+                            int reg_result = register_user(username, password);
+                            if (reg_result == 0) {
+                                char success_msg[] = "Registration successful. You can now log in.\n";
+                                send(sd, success_msg, sizeof(success_msg), 0);
+                            } else if (reg_result == -1) {
+                                // Registration failed (user already exists)
+                                char error_msg[] = "Username already exists. Please choose another username.\n";
+                                send(sd, error_msg, sizeof(error_msg), 0);
                             }
                         } else {
-                            // Broadcast the message to all clients with timestamp and username
-                            char timestamp[32];
-                            get_timestamp(timestamp, sizeof(timestamp));
-                            char message[1100]; // Increased buffer size to accommodate timestamp, username, and message
-                            snprintf(message, sizeof(message), "%s %s: %s\n", timestamp, clients[i].username, buffer);
-                            printf("%s", message); // Print message to server console
-                            broadcast_message(message, sd);
+                            // Invalid registration format
+                            char error_msg[] = "Invalid input. Format: /reg username password\n";
+                            send(sd, error_msg, sizeof(error_msg), 0);
+                        }
+                    } else {
+                        // Assume it's a login attempt (username password format)
+                        // Parse username and password
+                        char *username = strtok(buffer, " ");
+                        char *password = strtok(NULL, "");
+
+                        if (username && password) {
+                            int auth_result = authenticate_user(username, password);
+                            if (auth_result == 0) {
+                                // Authentication successful
+                                snprintf(buffer, sizeof(buffer), "Welcome, %s!\n", username);
+                                send(sd, buffer, strlen(buffer), 0);
+                                strncpy(clients[i].username, username, sizeof(clients[i].username) - 1);
+                            } else {
+                                // Authentication failed
+                                char error_msg[] = "Invalid username or password.\n";
+                                send(sd, error_msg, sizeof(error_msg), 0);
+                            }
+                        } else {
+                            // Invalid input format for login attempt
+                            char error_msg[] = "Invalid input. Format: username password\n";
+                            send(sd, error_msg, sizeof(error_msg), 0);
                         }
                     }
                 }
